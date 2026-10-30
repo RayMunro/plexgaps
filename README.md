@@ -1,6 +1,8 @@
-# PlexGaps
+<p align="center">
+  <img src="icon.png" width="128" alt="PlexGaps icon">
+</p>
 
-<img src="icon.png" width="96" align="right" alt="PlexGaps icon">
+<h1 align="center">PlexGaps</h1>
 
 PlexGaps scans your Plex library and shows two lists:
 
