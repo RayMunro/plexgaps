@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlexGaps</title>
+<style>
+  :root { --bg:#14161a; --card:#1e2127; --line:#2c3038; --text:#e6e8eb; --dim:#8b929c; --accent:#e5a00d; --err:#e5484d; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f4f5f7; --card:#fff; --line:#dde0e5; --text:#1b1d21; --dim:#667; --accent:#b97a00; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:16px; border-bottom:1px solid var(--line); }
+  h1 { font-size:18px; margin:0 8px 0 0; }
+  button, input { font:inherit; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:6px 12px; }
+  button { cursor:pointer; }
+  button.on, button.primary { background:var(--accent); color:#111; border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
+  .spacer { flex:1; }
+  .dim { color:var(--dim); font-size:13px; }
+  main { padding:16px; max-width:1100px; margin:0 auto; }
+  .banner { padding:10px 14px; border-radius:6px; margin-bottom:12px; border:1px solid var(--line); background:var(--card); }
+  .banner.err { border-color:var(--err); color:var(--err); }
+  .item { display:flex; gap:14px; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:10px; }
+  .item.ignored { opacity:.5; }
+  .item img, .noimg { width:60px; height:90px; object-fit:cover; border-radius:4px; flex:none; background:var(--line); }
+  .body { flex:1; min-width:0; }
+  .title { font-weight:600; }
+  .row { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .chips { display:flex; flex-wrap:wrap; gap:4px; margin:6px 0; }
+  .chip { font-size:12px; padding:1px 7px; border-radius:10px; border:1px solid var(--line); }
+  details summary { cursor:pointer; color:var(--dim); font-size:13px; }
+  ul { margin:6px 0; padding-left:18px; }
+  .small { font-size:12px; padding:2px 8px; }
+  .empty { text-align:center; color:var(--dim); padding:40px 0; }
+  progress { width:160px; }
+  [hidden] { display:none !important; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px 20px; max-width:640px; }
+  .card h2 { font-size:15px; margin:18px 0 4px; }
+  .card h2:first-child { margin-top:0; }
+  .card label { display:block; margin:10px 0 4px; font-size:13px; color:var(--dim); }
+  .card input:not([type=checkbox]) { width:100%; }
+  .card label.check { display:flex; align-items:center; gap:8px; color:var(--text); font-size:15px; }
+  .libgroup { margin:6px 0; }
+  .ok { color:#3fb950; } .bad { color:var(--err); }
+  .card .row { margin-top:14px; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>PlexGaps</h1>
+  <button id="tab-tv" class="on">Missing episodes</button>
+  <button id="tab-movies">Missing movies</button>
+  <button id="tab-settings">Settings</button>
+  <input id="q" type="search" placeholder="Filter">
+  <label id="ignLabel" class="dim"><input id="showIgnored" type="checkbox"> show ignored</label>
+  <span class="spacer"></span>
+  <span id="progress" class="dim"></span>
+  <span id="when" class="dim"></span>
+  <button id="scan" class="primary">Scan now</button>
+</header>
+<main>
+  <div id="banner"></div>
+  <div id="list"></div>
+  <section id="settings" class="card" hidden>
+    <h2>Connection</h2>
+    <label for="s-url">Plex URL</label>
+    <input id="s-url" type="text" placeholder="http://10.10.20.50:32400" autocomplete="off">
+    <label for="s-token">Plex token</label>
+    <input id="s-token" type="password" autocomplete="new-password">
+    <label for="s-tmdb">TMDB API key or read access token</label>
+    <input id="s-tmdb" type="password" autocomplete="new-password">
+    <div class="row"><button id="s-test" type="button">Test connection</button><span id="s-testres" class="dim"></span></div>
+    <h2>Libraries</h2>
+    <div id="s-libs" class="dim">Test the connection to choose libraries. Until then the saved choice is kept (none selected means all).</div>
+    <h2>Scanning</h2>
+    <label for="s-interval">Scan automatically every (hours, 0 for manual only)</label>
+    <input id="s-interval" type="number" min="0" step="1">
+    <label class="check"><input id="s-specials" type="checkbox"> Include specials (season 0)</label>
+    <label class="check"><input id="s-unaired" type="checkbox"> Include unreleased episodes and movies</label>
+    <div class="row">
+      <button id="s-save" type="button">Save</button>
+      <button id="s-saveScan" type="button" class="primary">Save and scan</button>
+      <span id="s-saveres" class="dim"></span>
+    </div>
+  </section>
+</main>
+<script>
+let data = null, tab = 'tv';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+function posterTag(p) { return p ? `<img src="${esc(p)}" loading="lazy" alt="">` : '<div class="noimg"></div>'; }
+
+function renderTv(s) {
+  const bySeason = {};
+  s.missing.forEach(e => (bySeason[e.season] ??= []).push(e));
+  const chips = Object.entries(bySeason).map(([n, eps]) => {
+    const label = n == 0 ? 'Specials' : 'S' + pad(n);
+    return `<span class="chip">${label}: ${eps.length} missing</span>`;
+  }).join('');
+  const lists = Object.entries(bySeason).map(([n, eps]) =>
+    `<details><summary>${n == 0 ? 'Specials' : 'Season ' + n} (${eps.length})</summary><ul>` +
+    eps.map(e => `<li>S${pad(e.season)}E${pad(e.episode)} ${esc(e.title)} <span class="dim">${esc(e.air_date)}</span></li>`).join('') +
+    '</ul></details>').join('');
+  return itemShell(s, `${esc(s.title)} <span class="dim">${esc(s.year)}</span>`,
+    `<span class="dim">${s.have}/${s.total} episodes</span>`, chips + lists);
+}
+
+function renderMovies(c) {
+  const miss = c.missing.map(m => `<li>${esc(m.title)} <span class="dim">${esc(m.year)}</span></li>`).join('');
+  const have = c.have.map(m => `<li>${esc(m.title)} <span class="dim">${esc(m.year)}</span></li>`).join('');
+  return itemShell(c, esc(c.title), `<span class="dim">${c.have.length} owned, ${c.missing.length} missing</span>`,
+    `<ul>${miss}</ul><details><summary>Owned (${c.have.length})</summary><ul>${have}</ul></details>`);
+}
+
+function itemShell(it, title, meta, inner) {
+  return `<div class="item ${it.ignored ? 'ignored' : ''}">${posterTag(it.poster)}
+    <div class="body"><div class="row"><span class="title">${title}</span>${meta}<span class="spacer"></span>
+    <button class="small" data-key="${esc(it.key)}" data-ign="${!it.ignored}">${it.ignored ? 'Unignore' : 'Ignore'}</button></div>${inner}</div></div>`;
+}
+
+let settings = null, libs = null;
+
+function render() {
+  $('tab-tv').classList.toggle('on', tab === 'tv');
+  $('tab-movies').classList.toggle('on', tab === 'movies');
+  $('tab-settings').classList.toggle('on', tab === 'settings');
+  const inSettings = tab === 'settings';
+  $('settings').hidden = !inSettings;
+  $('list').hidden = inSettings;
+  $('q').hidden = inSettings;
+  $('ignLabel').hidden = inSettings;
+  if (!data || inSettings) return;
+  $('when').textContent = data.scanned_at ? 'Last scan ' + data.scanned_at.replace('T', ' ') : 'Never scanned';
+  const q = $('q').value.toLowerCase(), showIgn = $('showIgnored').checked;
+  const items = data[tab].filter(i => (showIgn || !i.ignored) && i.title.toLowerCase().includes(q));
+  const unmatched = data.unmatched[tab] || [];
+  let html = items.map(tab === 'tv' ? renderTv : renderMovies).join('');
+  if (!html) html = `<div class="empty">${data.scanned_at ? 'Nothing missing here.' : 'No results yet. Run a scan.'}</div>`;
+  if (unmatched.length) html += `<details><summary>${unmatched.length} items not matched on TMDB</summary><ul>` +
+    unmatched.map(t => `<li>${esc(t)}</li>`).join('') + '</ul></details>';
+  $('list').innerHTML = html;
+}
+
+async function loadResults() { data = await api('/api/results'); render(); }
+
+async function pollStatus() {
+  const s = await api('/api/status');
+  $('scan').disabled = s.running;
+  $('progress').textContent = s.running ? `${s.message} ${s.done}/${s.total}` : '';
+  $('banner').innerHTML = s.error ? `<div class="banner err">${esc(s.error)}</div>` : '';
+  if (pollStatus.was && !s.running) loadResults();
+  pollStatus.was = s.running;
+}
+
+async function loadSettings() {
+  settings = await api('/api/settings');
+  $('s-url').value = settings.plex_url;
+  $('s-token').value = '';
+  $('s-token').placeholder = settings.has_plex_token ? 'Saved (leave blank to keep)' : 'Paste your Plex token';
+  $('s-tmdb').value = '';
+  $('s-tmdb').placeholder = settings.has_tmdb_key ? 'Saved (leave blank to keep)' : 'Paste your TMDB key';
+  $('s-interval').value = settings.scan_interval_hours;
+  $('s-specials').checked = settings.include_specials;
+  $('s-unaired').checked = settings.include_unaired;
+  libs = null;
+  $('s-testres').textContent = '';
+}
+
+function renderLibs() {
+  const group = (type, label, saved) => {
+    const items = libs.filter(l => l.type === type);
+    if (!items.length) return '';
+    return `<div class="libgroup"><div class="dim">${label}</div>` + items.map(l =>
+      `<label class="check"><input type="checkbox" data-lib="${type}" data-name="${esc(l.title)}" ${!saved.length || saved.includes(l.title) ? 'checked' : ''}> ${esc(l.title)}</label>`).join('') + '</div>';
+  };
+  $('s-libs').innerHTML = group('show', 'TV libraries', settings.tv_libraries) +
+    group('movie', 'Movie libraries', settings.movie_libraries) || 'No TV or movie libraries found.';
+}
+
+function checkedLibs(type, saved) {
+  if (!libs) return saved;
+  const boxes = [...document.querySelectorAll(`input[data-lib="${type}"]`)];
+  const on = boxes.filter(b => b.checked).map(b => b.dataset.name);
+  return on.length === boxes.length ? [] : on;
+}
+
+function collect() {
+  return {
+    plex_url: $('s-url').value, plex_token: $('s-token').value, tmdb_api_key: $('s-tmdb').value,
+    tv_libraries: checkedLibs('show', settings.tv_libraries),
+    movie_libraries: checkedLibs('movie', settings.movie_libraries),
+    scan_interval_hours: Number($('s-interval').value) || 0,
+    include_specials: $('s-specials').checked, include_unaired: $('s-unaired').checked,
+  };
+}
+
+const post = (path, method, body) => api(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+async function testConnection() {
+  const out = $('s-testres');
+  out.className = 'dim'; out.textContent = 'Testing...';
+  const r = await post('/api/test', 'POST', collect());
+  const part = (name, x, extra) => x.ok ? `<span class="ok">${name} OK${extra || ''}</span>` : `<span class="bad">${name}: ${esc(x.error)}</span>`;
+  out.innerHTML = part('Plex', r.plex, ` (${r.plex.libraries.length} libraries)`) + ' &nbsp; ' + part('TMDB', r.tmdb);
+  if (r.plex.ok) {
+    // keep the current ticks when re-testing
+    const cur = { show: checkedLibs('show', settings.tv_libraries), movie: checkedLibs('movie', settings.movie_libraries) };
+    settings.tv_libraries = cur.show; settings.movie_libraries = cur.movie;
+    libs = r.plex.libraries; renderLibs();
+  }
+}
+
+async function saveSettings(thenScan) {
+  const out = $('s-saveres');
+  out.className = 'dim'; out.textContent = 'Saving...';
+  await post('/api/settings', 'PUT', collect());
+  await loadSettings();
+  out.className = 'ok'; out.textContent = 'Saved';
+  if (thenScan) {
+    await api('/api/scan', { method: 'POST' });
+    tab = 'tv'; render(); pollStatus();
+  }
+}
+
+async function openSettings() {
+  tab = 'settings'; render();
+  await loadSettings();
+  if (settings.has_plex_token) testConnection();
+}
+
+$('tab-tv').onclick = () => { tab = 'tv'; render(); };
+$('tab-movies').onclick = () => { tab = 'movies'; render(); };
+$('tab-settings').onclick = openSettings;
+$('s-test').onclick = testConnection;
+$('s-save').onclick = () => saveSettings(false);
+$('s-saveScan').onclick = () => saveSettings(true);
+$('q').oninput = render;
+$('showIgnored').onchange = render;
+$('scan').onclick = async () => { await api('/api/scan', { method: 'POST' }); pollStatus(); };
+$('list').onclick = async e => {
+  const b = e.target.closest('button[data-key]');
+  if (!b) return;
+  await api('/api/ignore', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: b.dataset.key, ignored: b.dataset.ign === 'true' }) });
+  loadResults();
+};
+
+loadResults().then(async () => {
+  await loadSettings();
+  if (!settings.configured) openSettings();
+});
+pollStatus();
+setInterval(pollStatus, 2000);
+</script>
+</body>
+</html>
