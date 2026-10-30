@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-31 (2)
+
+- Copy buttons for each missing episode, missing movie, series and franchise title.
+
 ## 2026-10-31
 
 - Blue interface and icon.

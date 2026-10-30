@@ -78,6 +78,7 @@ Secrets are stored in `/config/settings.json` (readable only by the container us
 |---|---|
 | Missing episodes | Series with gaps, with a count per season. Expand a season to see each missing episode and its air date. |
 | Missing movies | Franchises with gaps, listing the missing films and the ones you own. |
+| Copy | Copies a title to the clipboard: `Show Name S01E02` for an episode, `Movie Title (Year)` for a movie, or the series or franchise name. Handy for searching. |
 | Filter | Narrows the current list by title. |
 | Ignore | Hides a series or franchise you do not care about. Tick **show ignored** to see it again and **Unignore** it. |
 | Scan now | Starts a scan immediately. Progress shows in the header. |

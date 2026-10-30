@@ -33,6 +33,7 @@
   details summary { cursor:pointer; color:var(--dim); font-size:13px; }
   ul { margin:6px 0; padding-left:18px; }
   .small { font-size:12px; padding:2px 8px; }
+  .copy { margin-left:6px; padding:0 7px; line-height:18px; }
   .empty { text-align:center; color:var(--dim); padding:40px 0; }
   progress { width:160px; }
   [hidden] { display:none !important; }
@@ -108,22 +109,24 @@ function renderTv(s) {
   }).join('');
   const lists = Object.entries(bySeason).map(([n, eps]) =>
     `<details><summary>${n == 0 ? 'Specials' : 'Season ' + n} (${eps.length})</summary><ul>` +
-    eps.map(e => `<li>S${pad(e.season)}E${pad(e.episode)} ${esc(e.title)} <span class="dim">${esc(e.air_date)}</span></li>`).join('') +
+    eps.map(e => `<li>S${pad(e.season)}E${pad(e.episode)} ${esc(e.title)} <span class="dim">${esc(e.air_date)}</span>${copyBtn(`${s.title} S${pad(e.season)}E${pad(e.episode)}`)}</li>`).join('') +
     '</ul></details>').join('');
   return itemShell(s, `${esc(s.title)} <span class="dim">${esc(s.year)}</span>`,
-    `<span class="dim">${s.have}/${s.total} episodes</span>`, chips + lists);
+    `<span class="dim">${s.have}/${s.total} episodes</span>`, chips + lists, s.title);
 }
 
 function renderMovies(c) {
-  const miss = c.missing.map(m => `<li>${esc(m.title)} <span class="dim">${esc(m.year)}</span></li>`).join('');
+  const miss = c.missing.map(m => `<li>${esc(m.title)} <span class="dim">${esc(m.year)}</span>${copyBtn(m.year ? `${m.title} (${m.year})` : m.title)}</li>`).join('');
   const have = c.have.map(m => `<li>${esc(m.title)} <span class="dim">${esc(m.year)}</span></li>`).join('');
   return itemShell(c, esc(c.title), `<span class="dim">${c.have.length} owned, ${c.missing.length} missing</span>`,
-    `<ul>${miss}</ul><details><summary>Owned (${c.have.length})</summary><ul>${have}</ul></details>`);
+    `<ul>${miss}</ul><details><summary>Owned (${c.have.length})</summary><ul>${have}</ul></details>`, c.title);
 }
 
-function itemShell(it, title, meta, inner) {
+function copyBtn(text) { return `<button class="small copy" data-copy="${esc(text)}" title="Copy">Copy</button>`; }
+
+function itemShell(it, title, meta, inner, copyText) {
   return `<div class="item ${it.ignored ? 'ignored' : ''}">${posterTag(it.poster)}
-    <div class="body"><div class="row"><span class="title">${title}</span>${meta}<span class="spacer"></span>
+    <div class="body"><div class="row"><span class="title">${title}</span>${meta}<span class="spacer"></span>${copyBtn(copyText)}
     <button class="small" data-key="${esc(it.key)}" data-ign="${!it.ignored}">${it.ignored ? 'Unignore' : 'Ignore'}</button></div>${inner}</div></div>`;
 }
 
@@ -246,7 +249,28 @@ $('s-saveScan').onclick = () => saveSettings(true);
 $('q').oninput = render;
 $('showIgnored').onchange = render;
 $('scan').onclick = async () => { await api('/api/scan', { method: 'POST' }); pollStatus(); };
+// navigator.clipboard needs HTTPS, which a LAN address usually is not, so fall back to execCommand
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
+  } catch (_) { /* fall through */ }
+  const t = document.createElement('textarea');
+  t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+  document.body.appendChild(t); t.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (_) { /* ignore */ }
+  t.remove();
+  return ok;
+}
+
 $('list').onclick = async e => {
+  const c = e.target.closest('button[data-copy]');
+  if (c) {
+    const ok = await copyText(c.dataset.copy);
+    c.textContent = ok ? 'Copied' : 'Failed';
+    setTimeout(() => { c.textContent = 'Copy'; }, 1200);
+    return;
+  }
   const b = e.target.closest('button[data-key]');
   if (!b) return;
   await api('/api/ignore', { method: 'POST', headers: { 'Content-Type': 'application/json' },
