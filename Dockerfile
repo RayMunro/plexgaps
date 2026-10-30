@@ -2,7 +2,9 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="PlexGaps" \
       org.opencontainers.image.description="Lists missing episodes and missing franchise movies in a Plex library" \
-      org.opencontainers.image.source="https://github.com/RayMunro/plexgaps"
+      org.opencontainers.image.source="https://github.com/RayMunro/plexgaps" \
+      net.unraid.docker.icon="https://raw.githubusercontent.com/RayMunro/plexgaps/main/icon.png" \
+      net.unraid.docker.webui="http://[IP]:[PORT:8686]/"
 
 ENV PYTHONUNBUFFERED=1 DATA_DIR=/config
 WORKDIR /srv

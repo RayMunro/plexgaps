@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-31
+
+- Blue interface and icon.
+- Image labels so Unraid shows the icon and a WebUI link even when the container is not created from the template.
+
 ## 2026-10-30
 
 - Initial release.
